@@ -1,0 +1,44 @@
+Research Integrity Ledger
+=========================
+
+Integrity ledger for research artifacts. The system does not store the data itself,
+but rather its digital fingerprint: it receives the SHA-256 hash of a document, seals
+this hash into a cryptographically chained block, and any subsequent tampering is
+detectable by comparing the current hash with the registered one.
+
+Context
+-------
+
+This project originated from research in computer science applied to personalized
+medicine, hence the need for an auditable record to ensure that research data would
+not be altered after collection.
+
+It is a learning proof-of-concept based on tutorials about building a blockchain in
+Python, generalized into a domain-agnostic integrity ledger. It is not production
+software; a real-world ledger would use a permissioned framework like Hyperledger Fabric.
+
+Tutorial links:
+https://adilmoujahid.com/posts/2018/03/intro-blockchain-bitcoin-python/
+https://medium.com/@vanflymen/learn-blockchains-by-building-one-117428612f46
+
+Quick Start
+-----------
+
+* pip install flask requests
+* python ledger.py
+* python ledger.py --port 5001
+
+A bootstrap API key is printed to the terminal on the first run, SAVE IT!
+
+Documentation
+-------------
+
+Complete technical reference/documentation is available in both Portuguese
+and English inside the docs/ folder.
+
+* How hash chaining works: section 1.
+* Block and record structure: section 2.
+* Architecture and code organization: section 3.
+* Complete API reference: section 4.
+* Authentication details: section 5.
+* Known limitations: section 6.
