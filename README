@@ -1,0 +1,159 @@
+Research Integrity Ledger
+=========================
+
+Context
+-------
+
+Proof of concept (PoC) in C++17 of an append-only, hash-chained ledger that
+protects the integrity of research artifacts: datasets, scripts, results and
+reports. The question it answers is: "Is this file exactly the one I registered,
+and has the registration history not been rewritten?"
+
+In research, it is common to need to demonstrate that:
+
+* The dataset that was analyzed is the same one that was collected.
+* The results were not altered after the analysis.
+* An experiment is being re-run from exactly the same inputs.
+
+Cases of scientific misconduct and the so-called "reproducibility crisis"
+highlight the need for simple, verifiable mechanisms to support these claims.
+This PoC demonstrates one of them.
+
+How It Works
+------------
+
+A hash function (SHA-256) maps any input to a fixed-size output (256 bits). The
+hash works as a "fingerprint" of the file. Relevant properties:
+
+* Deterministic: the same input always produces the same hash.
+* Avalanche effect: flipping 1 bit of the input changes ~50% of the hash bits.
+* Preimage and collision resistant: it is computationally infeasible to find a
+  different input that produces the same hash.
+
+Each ledger entry stores the hash of the previous entry, and its own hash
+covers all of its fields, including that previous hash:
+
+Entry 0              Entry 1              Entry 2
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+| idx, timestamp  |  | idx, timestamp  |  | idx, timestamp  |
+| file, sha256    |  | file, sha256    |  | file, sha256    |
+| prev = 000...0  | >| prev = hash(E0) | >| prev = hash(E1) |
+| hash = H(E0)    |/ | hash = H(E1)    |/ | hash = H(E2)    |
+└─────────────────┘  └─────────────────┘  └─────────────────┘
+entry_hash = SHA256( idx | timestamp | file | file_sha256 | prev_hash )
+
+Editing, removing or reordering any old entry changes its hash, which breaks
+the `prev` field of the next one, and so on to the end of the chain.
+
+The `verify` command checks two independent things:
+
+* Chain integrity: edited, removed or reordered ledger entries.
+* File integrity: registered files that were modified or deleted afterwards.
+
+Quick Start
+-----------
+
+No external dependencies: SHA-256 is implemented in the source itself
+(FIPS 180-4).
+
+* Build: g++ -std=c++17 -O2 -Wall -o integrity main.cpp
+
+* ./integrity register data.csv   # computes the SHA-256 and appends an entry to ledger.log
+* ./integrity verify              # checks chain and files (exit codes below)
+* ./integrity list                # prints all entries
+
+Exit codes: 0 = integrity confirmed, 1 = verification failed, 2 = usage or
+input error (bad arguments, unreadable file, malformed ledger).
+
+The ledger is created as `ledger.log` in the current directory. File paths are
+stored exactly as given, so always run the tool from the same folder.
+
+Ledger Format
+-------------
+
+Plain text, one entry per line, fields separated by `|`:
+
+* idx|unix_timestamp|file|file_sha256|prev_hash|entry_hash
+
+The first entry uses 64 zeros as its `prev_hash` (the genesis block). Since `|`
+is the field separator, file names containing `|` are rejected.
+
+Code Structure
+--------------
+
+* `Sha256`: SHA-256 implementation with streaming input.
+* `sha256_str` / `sha256_file`: hashing of strings and files (files are read in
+  64 KB chunks, without loading everything into memory).
+* `Entry`: ledger entry structure and computation of its hash.
+* `load`: reads and parses the ledger.
+* `cmd_register` / `cmd_verify` / `cmd_list`: CLI commands.
+
+The hashing and ledger primitives (`Sha256`, `Entry`, `load`) are independent of
+the command-line interface. The `cmd_*` functions still print directly to the
+console, so exposing this over an HTTP server in the future would first require
+refactoring them to return results instead of printing.
+
+Test Scenarios
+--------------
+
+All executed and validated:
+
+* Hash of "abc" matches `sha256sum` (`ba7816bf...15ad`).
+* Hash of a 300 KB binary file matches `sha256sum`.
+* Nothing changed: `integrity confirmed`.
+* A registered file was modified: `FILE MODIFIED`.
+* A registered file was deleted: `FILE missing`.
+* A field of a ledger entry was edited: `ENTRY tampered`.
+* A middle ledger entry was removed: `INDEX mismatch` + `CHAIN broken`.
+* The last ledger entry was removed: NOT detected (see Limitations).
+
+Limitations and Threat Model
+----------------------------
+
+The PoC protects against accidental or naive changes, but not against an
+adversary who controls the ledger:
+
+* Full chain rewrite: anyone with write access to `ledger.log` can edit an entry
+  and recompute all following hashes, since no secret is required. The defense
+  is to anchor the chain head somewhere the attacker does not control (an e-mail
+  to your advisor, a public repository, a Zenodo DOI, an RFC 3161 timestamping
+  service, a public blockchain).
+* No authenticity: there is no digital signature, so the ledger does not prove
+  *who* registered a file.
+* Untrusted timestamps: the time comes from the local clock, which can be
+  changed.
+* Tail truncation: removing the last entries is not detected unless the chain
+  head was anchored externally.
+* No concurrency control: two processes registering at the same time may corrupt
+  the ledger.
+* Custom SHA-256 is educational: in production, use an audited library (OpenSSL,
+  libsodium).
+
+Roadmap
+-------
+
+* Digital signatures (Ed25519): sign each entry for authenticity and
+  non-repudiation.
+* External anchoring: RFC 3161 timestamps or publication of the chain head.
+* Merkle tree: verify a single file without walking the whole chain, with
+  inclusion *proofs*.
+* Metadata recording: software version, environment, experiment parameters.
+* Server mode: HTTP API for multiple researchers, with authentication.
+* Integration with scientific repositories: Zenodo, OSF, Git.
+* Experimental evaluation: performance (time vs. dataset size), resistance to
+  simulated attacks.
+
+References
+----------
+
+* NIST. FIPS PUB 180-4: Secure Hash Standard (SHS).
+* Haber, S.; Stornetta, W. S. How to Time-Stamp a Digital Document. Journal of
+  Cryptology, 1991.
+* Merkle, R. A Digital Signature Based on a Conventional Encryption Function.
+  CRYPTO, 1987.
+* RFC 3161: Time-Stamp Protocol (TSP).
+* RFC 6962: Certificate Transparency, a practical example of a Merkle tree-based
+  append-only log.
+* Nakamoto, S. Bitcoin: A Peer-to-Peer Electronic Cash System, 2008.
+* Moujahid, A. A Practical Introduction to Blockchain with Python, 2018 (blog
+  post).
